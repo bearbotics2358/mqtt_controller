@@ -26,6 +26,7 @@
 #include <sys/types.h>
 #include <unistd.h>
 #include <stdlib.h> // random()
+#include <errno.h>
 
 #include <mosquitto.h>
 
@@ -97,10 +98,67 @@ const char * str_cmd(enum processes proc)
 	return ret;
 }
 
+// this function starts computer vision by forking
+// the parent returns from the fork call with the pid of the child
+// the child returns with a zero and launches the task we wish to start
+void claw_start_cv()
+{
+	pid_t ret;
+	
+	ret = fork();
+	printf("fork returned %d\n", ret);
+	switch(ret) {
+	case -1:
+		// error
+		printf("unable to fork - %s\n", strerror(errno));
+		exit(-1);
+
+	case 0:
+		// child
+		// exec new process
+		execl("useless.sh", "useless.sh", "vision", (char *) NULL);
+		// never reach this point
+		
+	default:
+		// parent
+		claw_process.pid = ret;
+		break;
+	}
+}
+
+// this function starts computer vision by forking
+// the parent returns from the fork call with the pid of the child
+// the child returns with a zero and launches the task we wish to start
+void claw_start_view()
+{
+	pid_t ret;
+	
+	ret = fork();
+	printf("fork returned %d\n", ret);
+	switch(ret) {
+	case -1:
+		// error
+		printf("unable to fork - %s\n", strerror(errno));
+		exit(-1);
+
+	case 0:
+		// child
+		// exec new process
+		execl("useless.sh", "useless.sh", "view", (char *) NULL);
+		// never reach this point
+		
+	default:
+		// parent
+		claw_process.pid = ret;
+		break;
+	}
+}
+
 void claw_process_change(char *command)
 {
 	enum processes cmd;
-
+	int ret;
+	
 	cmd = cmd_check(command);
 	if(cmd == invalid) {
 		return;
@@ -116,6 +174,10 @@ void claw_process_change(char *command)
 	// are we running something else that must be shutdown?
 	if(claw_process.current_process != off) {
 		printf("Kill claw pid %d\n", claw_process.pid);
+		if(claw_process.pid != 0) {
+			ret = kill(claw_process.pid, SIGTERM);
+			printf("Kill returned %d\n", ret);
+		}
 		claw_process.current_process = off;
 	}
 	if(cmd == off) {
@@ -124,8 +186,12 @@ void claw_process_change(char *command)
 	}
 	
 	// start new process
+	if(cmd == vision) {
+		claw_start_cv();
+	} else if(cmd == view) {
+		claw_start_view();
+	}
 	claw_process.current_process = cmd;
-	claw_process.pid = (int) random();
 	printf("Starting new claw process pid %d\n", claw_process.pid);
 	
 }
