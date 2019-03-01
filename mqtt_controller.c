@@ -1,17 +1,31 @@
 /* mqtt_controller - activate and kill other programs based on remote request
 
+	 Protocol:
+	 Send message to camera
+	 Cameras:
+	 - claw
+	 - cargo
+	 Messages:
+	 - on - turn on streaming for remote viewing
+	 - off - turn off streaming for remote viewing
+	 - vision - turn on computer vision
+
+	 Ideally, remember which mode the camera is in and if necessary kill the active process before starting a new process (e.g., kill viewing before activating CV)
+
 	 created 2/28/2019 BD from mqtt_example
 
+	 
+
+	 BUILD: gcc -o mqtt_controller mqtt_contller.c -lmosquitto
 */
 
 #include <signal.h>
 #include <stdio.h>
 #include <stdint.h>
 #include <string.h>
-
-// 2/7/17 added by BD
 #include <sys/types.h>
 #include <unistd.h>
+#include <stdlib.h> // random()
 
 #include <mosquitto.h>
 
@@ -19,6 +33,135 @@
 #define mqtt_port 1883
 
 static int run = 1;
+
+// one enum to cover commands and active processes
+// invalid only applies to commands, not processes
+enum processes {
+	invalid = -1,
+	off = 0,
+	view = 1,
+	vision = 2,
+} ;
+
+struct process_status {
+	enum processes current_process;
+	int pid;
+} ;
+
+struct process_status claw_process;
+struct process_status cargo_process;
+
+// strings for printing
+const char *INVALID = "INVALID";
+const char *OFF = "off";
+const char *VIEW = "view";
+const char *VISION = "vision";
+
+enum processes cmd_check(char * command)
+{
+	enum processes ret = invalid;
+
+	if(!strcmp(command, "off")) {
+		ret = off;
+	} else if(!strcmp(command, "view")) {
+		ret = view;
+	} else if(!strcmp(command, "vision")) {
+		ret = vision;
+	}
+
+	return ret;
+}
+
+const char * str_cmd(enum processes proc)
+{
+	const char * ret;
+	
+	switch(proc) {
+	case off:
+		ret = OFF;
+		break;
+
+	case view:
+		ret = VIEW;
+		break;
+
+	case vision:
+		ret = VISION;
+		break;
+
+	default:
+	case invalid:
+		ret = INVALID;
+		break;
+	}
+	return ret;
+}
+
+void claw_process_change(char *command)
+{
+	enum processes cmd;
+
+	cmd = cmd_check(command);
+	if(cmd == invalid) {
+		return;
+	}
+
+	// are we already running this command?
+	if(claw_process.current_process == cmd) {
+		// nothing to do
+		printf("Claw already in %s\n", str_cmd(cmd));
+		return;
+	}
+
+	// are we running something else that must be shutdown?
+	if(claw_process.current_process != off) {
+		printf("Kill claw pid %d\n", claw_process.pid);
+		claw_process.current_process = off;
+	}
+	if(cmd == off) {
+		// done
+		return;
+	}
+	
+	// start new process
+	claw_process.current_process = cmd;
+	claw_process.pid = (int) random();
+	printf("Starting new claw process pid %d\n", claw_process.pid);
+	
+}
+
+void cargo_process_change(char *command)
+{
+	enum processes cmd;
+
+	cmd = cmd_check(command);
+	if(cmd == invalid) {
+		return;
+	}
+
+	// are we already running this command?
+	if(cargo_process.current_process == cmd) {
+		// nothing to do
+		printf("Cargo already in %s\n", str_cmd(cmd));
+		return;
+	}
+
+	// are we running something else that must be shutdown?
+	if(cargo_process.current_process != off) {
+		printf("Kill cargo pid %d\n", cargo_process.pid);
+		cargo_process.current_process = off;
+	}
+	if(cmd == off) {
+		// done
+		return;
+	}
+	
+	// start new process
+	cargo_process.current_process = cmd;
+	cargo_process.pid = (int) random();
+	printf("Starting new cargo process pid %d\n", cargo_process.pid);
+	
+}
 
 void handle_signal(int s)
 {
@@ -33,11 +176,19 @@ void connect_callback(struct mosquitto *mosq, void *obj, int result)
 void message_callback(struct mosquitto *mosq, void *obj, const struct mosquitto_message *message)
 {
 	bool match = 0;
+
 	printf("got message '%.*s' for topic '%s'\n", message->payloadlen, (char*) message->payload, message->topic);
 
-	mosquitto_topic_matches_sub("/devices/wb-adc/controls/+", message->topic, &match);
-	if (match) {
-		printf("got message for ADC topic\n");
+	mosquitto_topic_matches_sub("/camera/controls/claw/+", message->topic, &match);
+	if(match) {
+		printf("got message for claw camera controls topic\n");
+		claw_process_change(message->payload);
+	}
+
+	mosquitto_topic_matches_sub("/camera/controls/cargo/+", message->topic, &match);
+	if(match) {
+		printf("got message for cargo camera controls topic\n");
+		cargo_process_change(message->payload);
 	}
 
 }
@@ -51,6 +202,12 @@ int main(int argc, char *argv[])
 
 	signal(SIGINT, handle_signal);
 	signal(SIGTERM, handle_signal);
+
+	// initialize processes
+	claw_process.current_process = off;
+	claw_process.pid = -1;
+	cargo_process.current_process = off;
+	cargo_process.pid = -1;
 
 	mosquitto_lib_init();
 
