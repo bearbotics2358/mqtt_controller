@@ -1,7 +1,17 @@
+/* mqtt_controller - activate and kill other programs based on remote request
+
+	 created 2/28/2019 BD from mqtt_example
+
+*/
+
 #include <signal.h>
 #include <stdio.h>
 #include <stdint.h>
 #include <string.h>
+
+// 2/7/17 added by BD
+#include <sys/types.h>
+#include <unistd.h>
 
 #include <mosquitto.h>
 
@@ -54,15 +64,17 @@ int main(int argc, char *argv[])
 
 	    rc = mosquitto_connect(mosq, mqtt_host, mqtt_port, 60);
 
-		mosquitto_subscribe(mosq, NULL, "/devices/wb-adc/controls/+", 0);
+		mosquitto_subscribe(mosq, NULL, "/camera/controls/+/+", 0);
 
 		while(run){
-			rc = mosquitto_loop(mosq, -1, 1);
+			// BD changed timeout to 0 from -1 (1000ms)
+			rc = mosquitto_loop(mosq, 0, 1);
 			if(run && rc){
 				printf("connection error!\n");
 				sleep(10);
 				mosquitto_reconnect(mosq);
 			}
+			sleep(1);
 		}
 		mosquitto_destroy(mosq);
 	}
