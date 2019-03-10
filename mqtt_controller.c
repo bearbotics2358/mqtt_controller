@@ -16,7 +16,7 @@
 
 	 
 
-	 BUILD: gcc -o mqtt_controller mqtt_contller.c -lmosquitto
+	 BUILD: gcc -o mqtt_controller mqtt_controller.c -lmosquitto
 */
 
 #include <signal.h>
@@ -241,6 +241,9 @@ void handle_signal(int s)
 void connect_callback(struct mosquitto *mosq, void *obj, int result)
 {
 	printf("connect callback, rc=%d\n", result);
+
+	printf("subscribing to %s\n", "/camera/controls/+/+");
+	mosquitto_subscribe(mosq, NULL, "/camera/controls/+/+", 0);
 }
 
 void message_callback(struct mosquitto *mosq, void *obj, const struct mosquitto_message *message)
@@ -289,9 +292,12 @@ int main(int argc, char *argv[])
 		mosquitto_connect_callback_set(mosq, connect_callback);
 		mosquitto_message_callback_set(mosq, message_callback);
 
-	    rc = mosquitto_connect(mosq, mqtt_host, mqtt_port, 60);
+		rc = mosquitto_connect(mosq, mqtt_host, mqtt_port, 60);
 
-		mosquitto_subscribe(mosq, NULL, "/camera/controls/+/+", 0);
+		// Subscribe in the connect callback, not here
+		// Otherwise, if there is no initial connect,
+		// even when the MQTT broker does becom available,
+		// we will never subscribe
 
 		while(run){
 			// BD changed timeout to 0 from -1 (1000ms)
