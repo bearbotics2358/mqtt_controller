@@ -1,0 +1,1 @@
+uv4l --auto-video_nr --driver raspicam --encoding h264 --width 104 --height 96 --server-option --port=1187 --framerate 25 --enable-server on --rotation 180
